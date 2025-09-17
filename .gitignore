@@ -1,4 +1,7 @@
-# Ignore Personal Dataset
-Dataset/
+# Ignore the dataset
+raw_photos/*.jpg
+
+#Ignore the processed data
+aligned_photos/*.jpg
 
 venv
