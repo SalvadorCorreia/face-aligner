@@ -5,6 +5,6 @@ raw_photos/*.jpg
 aligned_photos/*.jpg
 
 # Ignore outout videos
-raw_photos/*.mp4
+videos/*.mp4
 
 venv
