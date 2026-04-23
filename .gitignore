@@ -4,4 +4,7 @@ raw_photos/*.jpg
 #Ignore the processed data
 aligned_photos/*.jpg
 
+# Ignore outout videos
+raw_photos/*.mp4
+
 venv
