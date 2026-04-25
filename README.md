@@ -9,6 +9,7 @@ This project fixes that. It takes a folder full of messy, unaligned selfies, use
 * **Smart Alignment:** It looks for your eyes and nose, then scales and rotates the picture so your face is always perfectly centered.
 * **The COVID Mask Fallback:** What if you're wearing a mask and it can't see your nose? No problem. The script is smart enough to realize this and falls back to a 2-point "eyes-only" alignment so your video doesn't break.
 * **No Ugly Black Borders:** When you rotate a photo, you get empty black corners. The video generator has a built-in `blur-fill` mode that uses a blurred version of your photo to fill the background (like you see on TikTok or YouTube Shorts). 
+* **Time-Lapse Tracker:** Automatically reads the date from your photo's filename (e.g., `20200928_1350.jpg`) and stamps a clean, readable date in the corner of your video to show the passing of time.
 
 ---
 
@@ -63,6 +64,13 @@ You can change how the final video looks by changing the `--mode` flag:
 * **`--mode blur-fill` (Highly Recommended):** Extracts your photo, scales it up, blurs it, and puts the sharp version on top. This completely eliminates any black borders and looks incredibly professional.
 * **`--mode strict-crop`:** Crops a tight square around your face. **Warning:** If your face was too close to the edge in the original photo, this mode will throw that photo away to prevent showing any black edges.
 * **`--mode vanilla`:** The absolute basics. Just stitches the aligned photos together exactly as they are. You will probably see black borders dancing around the edges.
+
+### Adding a Date Overlay
+Want to show the passing of time? Add the `--show-date` flag. The script will look for a date in your image filenames and stamp it cleanly in the bottom right corner of your video!
+
+```bash
+python scripts/make_video.py --mode blur-fill --show-date
+```
 
 ### Changing the Speed
 By default, the video runs at 15 Frames Per Second (FPS). Want it faster? Add the `--fps` flag:

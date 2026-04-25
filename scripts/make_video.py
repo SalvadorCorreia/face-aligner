@@ -2,6 +2,8 @@ import cv2
 import os
 import argparse
 import numpy as np
+import re
+import time
 from pathlib import Path
 from datetime import datetime
 from tqdm import tqdm
@@ -22,52 +24,76 @@ def contains_black_border(image_crop, threshold=10):
 def apply_blur_fill(frame, blur_kernel=151):
     h_orig, w_orig = frame.shape[:2]
     
-    # 1. Grayscale and threshold to find the general shape
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray, 5, 255, cv2.THRESH_BINARY)
     
-    # 2. Find contours
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return frame
         
     c = max(contours, key=cv2.contourArea)
     
-    # FIX #1 (White Dots): Draw the contour totally solid. 
-    # This prevents dark clothing/shadows inside the image from becoming transparent.
     solid_mask = np.zeros_like(gray)
     cv2.drawContours(solid_mask, [c], -1, 255, thickness=cv2.FILLED)
     
-    # FIX #2 & #3 (Black Lines & Scaling): Erode the mask.
-    # This shaves ~10 pixels off the outer edge to destroy JPEG artifact rings.
     erosion_kernel = np.ones((5, 5), np.uint8)
     eroded_mask = cv2.erode(solid_mask, erosion_kernel, iterations=2)
     
-    # Get the bounding box from this clean, shrunken mask
     x, y, w, h = cv2.boundingRect(eroded_mask)
     if w == 0 or h == 0:
-        return frame # Fallback
+        return frame
         
-    # Crop exactly the clean pixels and stretch to fill the screen
     valid_crop = frame[y:y+h, x:x+w]
     bg = cv2.resize(valid_crop, (w_orig, h_orig), interpolation=cv2.INTER_CUBIC)
     
-    # Apply heavy background blur
     ksize = blur_kernel if blur_kernel % 2 != 0 else blur_kernel + 1
     bg = cv2.GaussianBlur(bg, (ksize, ksize), 0)
     
-    # FIX #4 (Jarring Cutoff): Feather the mask!
-    # Blur the edge of the mask so it fades smoothly into the background
     feathered_mask = cv2.GaussianBlur(eroded_mask, (31, 31), 0)
     
-    # Convert mask to a 0.0 to 1.0 float for alpha blending
     alpha = feathered_mask.astype(float) / 255.0
-    alpha = np.expand_dims(alpha, axis=2) # Make it 3D to match color channels
+    alpha = np.expand_dims(alpha, axis=2) 
     
-    # Blend the sharp original and blurred background using the feathered alpha mask
     final_frame = (frame * alpha + bg * (1.0 - alpha)).astype(np.uint8)
     
     return final_frame
+
+def get_date_from_file(filename, filepath):
+    """Attempts to extract a YYYYMMDD date from the filename. Falls back to file creation time."""
+    # Look for a standard 8-digit date string (e.g., 20200928)
+    match = re.search(r'(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])', filename)
+    
+    if match:
+        year, month, day = match.groups()
+        date_obj = datetime(int(year), int(month), int(day))
+        return date_obj.strftime("%b %d, %Y") # Outputs: "Sep 28, 2020"
+    else:
+        # Fallback: Check the OS modification time of the file
+        mtime = os.path.getmtime(filepath)
+        date_obj = datetime.fromtimestamp(mtime)
+        return date_obj.strftime("%b %Y") # Just Month/Year if we are guessing
+
+def overlay_date_text(frame, date_text):
+    """Draws white text with a thick black shadow in the bottom right corner."""
+    font = cv2.FONT_HERSHEY_DUPLEX
+    font_scale = 1.2
+    thickness = 2
+    
+    # Calculate the size of the text so we can align it to the right side
+    (text_w, text_h), _ = cv2.getTextSize(date_text, font, font_scale, thickness)
+    
+    # Position: Bottom Right corner with a 40-pixel padding
+    frame_h, frame_w = frame.shape[:2]
+    x = frame_w - text_w - 40
+    y = frame_h - 40
+    
+    # Draw the black drop shadow (offset by 3 pixels, thicker)
+    cv2.putText(frame, date_text, (x + 3, y + 3), font, font_scale, (0, 0, 0), thickness + 3, cv2.LINE_AA)
+    
+    # Draw the white text on top
+    cv2.putText(frame, date_text, (x, y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+    
+    return frame
 
 def main():
     parser = argparse.ArgumentParser(description="Compile aligned photos into a Timelapse Video.")
@@ -76,6 +102,10 @@ def main():
     parser.add_argument("--crop-width", type=int, default=800, help="Width of strict crop")
     parser.add_argument("--crop-height", type=int, default=800, help="Height of strict crop")
     parser.add_argument("--blur-kernel", type=int, default=151, help="Strength of the background blur (default: 151)")
+    
+    # NEW ARGUMENT HERE
+    parser.add_argument("--show-date", action="store_true", help="Overlay the date in the bottom right corner")
+    
     args = parser.parse_args()
 
     INPUT_DIR = "aligned_photos"
@@ -126,6 +156,7 @@ def main():
         if frame is None:
             continue
 
+        # 1. Apply formatting modes
         if args.mode == 'strict-crop':
             crop = frame[y1:y2, x1:x2]
             if contains_black_border(crop):
@@ -139,6 +170,12 @@ def main():
         else:
             final_frame = frame
             
+        # 2. Overlay Date (if requested)
+        if args.show_date:
+            date_text = get_date_from_file(image_name, img_path)
+            final_frame = overlay_date_text(final_frame, date_text)
+            
+        # 3. Write to video
         video_writer.write(final_frame)
         processed_count += 1
 
@@ -149,6 +186,7 @@ def main():
     print("="*45)
     print(f" Output File : {output_path}")
     print(f" Mode        : {args.mode.upper()}")
+    print(f" Date Overlay: {'ENABLED' if args.show_date else 'DISABLED'}")
     print(f" Resolution  : {video_w}x{video_h}")
     print(f" Framerate   : {args.fps} FPS")
     print("-" * 45)
